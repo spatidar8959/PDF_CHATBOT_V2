@@ -14,6 +14,7 @@ from langchain.memory import ConversationBufferMemory
 import io
 from dotenv import load_dotenv
 
+
 load_dotenv()
 
 app = Flask(__name__)
@@ -80,12 +81,8 @@ def process_pdf():
         if not allowed_file(pdf_file.filename):
             return jsonify({'error': 'Only PDF and TEXT files are allowed.'}), 400
 
-        # Save the PDF file temporarily
-        pdf_path = pdf_file.filename
-        pdf_file.save(pdf_path)
-
         # Load PDF and extract text
-        pdf_document = fitz.open(pdf_path)
+        pdf_document = fitz.open(stream=pdf_file.read())
         extracted_text = ""
 
         for page_number in range(pdf_document.page_count):
