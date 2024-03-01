@@ -1,11 +1,10 @@
+faiss-cpu==1.7.4
 Flask==3.0.2
 Flask-Cors==4.0.0
-Flask-Limiter==3.5.1
-Flask-Session==0.6.0
-langchain==0.1.5
-langchain-community==0.0.21
-langchain-core==0.1.24
-langchain-openai==0.0.5
-PyMuPDF==1.23.24
+langchain==0.1.9
+langchain-community==0.0.24
+langchain-core==0.1.27
+langchain-openai==0.0.8
+PyMuPDF==1.23.25
 pytesseract==0.3.10
 python-dotenv==1.0.1
