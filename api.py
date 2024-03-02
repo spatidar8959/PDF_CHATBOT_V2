@@ -3,9 +3,9 @@ from flask_cors import CORS
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain_openai import OpenAIEmbeddings
-from langchain.vectorstores import FAISS
+from langchain_community.vectorstores import FAISS
 from langchain.chains import LLMChain
-from langchain_community.llms import OpenAI
+from langchain_openai import OpenAI
 import os
 import fitz
 from PIL import Image
@@ -22,7 +22,6 @@ CORS(app)
 
 api_key = os.environ["OPENAI_API_KEY"]
 
-# Initialize global variables
 language = 'English'
 pdf_path = None
 pdf_document = None
@@ -32,7 +31,6 @@ db = None
 llm_chain = None
 pdf_processing_complete = False
 
-# Define language model and LLMChain
 template = """
 you are a helpful assistant which reads pdf content with all attention and gives an answer to the user's query based on
 pdf context. You generate the answers in the format given in context. If the context is in table format, generate the answer in table format. If you don't know the answer, tell the user "I don't understand your question".
@@ -72,7 +70,6 @@ def process_pdf():
     global language, pdf_path, pdf_document, chat_buffer, embeddings, db, pdf_processing_complete
 
     try:
-        # Check if a PDF file is provided in the request
         pdf_file = request.files.get('pdf_file')
 
         if not pdf_file or pdf_file.filename == '':
@@ -81,7 +78,6 @@ def process_pdf():
         if not allowed_file(pdf_file.filename):
             return jsonify({'error': 'Only PDF and TEXT files are allowed.'}), 400
 
-        # Load PDF and extract text
         pdf_document = fitz.open(stream=pdf_file.read())
         extracted_text = ""
 
@@ -99,7 +95,6 @@ def process_pdf():
                 image_text = pytesseract.image_to_string(image)
                 extracted_text += f"\n[Image {img_index}]\n{image_text}"
 
-        # Process extracted text
         raw_text = extracted_text.strip()
 
         text_splitter = RecursiveCharacterTextSplitter(
@@ -110,7 +105,6 @@ def process_pdf():
         )
         texts = text_splitter.split_text(raw_text)
 
-        # Create FAISS database
         embeddings = OpenAIEmbeddings()
         db = FAISS.from_texts(texts, embeddings)
         pdf_processing_complete = True
