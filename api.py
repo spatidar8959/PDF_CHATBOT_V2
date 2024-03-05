@@ -1,4 +1,7 @@
-from flask import Flask, request, jsonify
+from flask import Flask, request, jsonify, session
+import secrets
+from deep_translator import GoogleTranslator
+from PyPDF2 import PdfReader
 from flask_cors import CORS  
 from langchain.prompts import PromptTemplate
 from langchain.text_splitter import RecursiveCharacterTextSplitter
@@ -7,11 +10,6 @@ from langchain_community.vectorstores import FAISS
 from langchain.chains import LLMChain
 from langchain_openai import OpenAI
 import os
-import fitz
-from PIL import Image
-import pytesseract
-from langchain.memory import ConversationBufferMemory
-import io
 from dotenv import load_dotenv
 
 
@@ -19,21 +17,21 @@ load_dotenv()
 
 app = Flask(__name__)
 CORS(app)
+app.secret_key = os.urandom(24) 
 
 api_key = os.environ["OPENAI_API_KEY"]
 
 language = 'English'
-pdf_path = None
-pdf_document = None
-chat_buffer = ConversationBufferMemory(memory_key="messages", return_messages=True)
 embeddings = None
 db = None
+new_db = None
 llm_chain = None
 pdf_processing_complete = False
+store_path = ""
 
 template = """
-you are a helpful assistant which reads pdf content with all attention and gives an answer to the user's query based on
-pdf context. You generate the answers in the format given in context. If the context is in table format, generate the answer in table format. If you don't know the answer, tell the user "I don't understand your question".
+You are helpful AI question answering Assistant.You read the context provide by user and generate answer of the user query.
+If user ask question out of context tell the user "This is not given in the context" or give answer in your term.
 
 # Context: {context}
 # Question: {query}
@@ -56,46 +54,35 @@ ALLOWED_EXTENSIONS = {'pdf','txt'}
 def allowed_file(filename):
     return '.' in filename and filename.rsplit('.', 1)[1].lower() in ALLOWED_EXTENSIONS
 
-
 @app.route('/set_language', methods=['POST'])
 def set_language():
-    global language
-
     language = request.form.get('language', '')
-
+    print(f"Language received: {language}")
+    session['language'] = language
     return jsonify({'message': f'Language set to {language}'})
 
 @app.route('/process_pdf', methods=['POST'])
 def process_pdf():
-    global language, pdf_path, pdf_document, chat_buffer, embeddings, db, pdf_processing_complete
+    global language, embeddings, db, pdf_processing_complete
 
     try:
         pdf_file = request.files.get('pdf_file')
-
+        store_path = os.path.splitext(os.path.basename(pdf_file.filename))[0]
         if not pdf_file or pdf_file.filename == '':
             return jsonify({'error': 'Please provide a PDF file in the "pdf_file" form field.'}), 400
         
         if not allowed_file(pdf_file.filename):
             return jsonify({'error': 'Only PDF and TEXT files are allowed.'}), 400
 
-        pdf_document = fitz.open(stream=pdf_file.read())
-        extracted_text = ""
+        user_id = secrets.token_hex(16)
+        session['user_id'] = user_id
 
-        for page_number in range(pdf_document.page_count):
-            page = pdf_document[page_number]
-            page_text = page.get_text()
-            extracted_text += page_text
-            images = page.get_images(full=True)
-            for img_index, img_info in enumerate(images):
-                img_index += 1
-                image_index = img_info[0]
-                base_image = pdf_document.extract_image(image_index)
-                image_bytes = base_image["image"]
-                image = Image.open(io.BytesIO(image_bytes))
-                image_text = pytesseract.image_to_string(image)
-                extracted_text += f"\n[Image {img_index}]\n{image_text}"
-
-        raw_text = extracted_text.strip()
+        pdfreader = PdfReader(pdf_file)
+        raw_text = ''
+        for i, page in enumerate(pdfreader.pages):
+            content = page.extract_text()
+            if content:
+                raw_text += content
 
         text_splitter = RecursiveCharacterTextSplitter(
             chunk_size=1000,
@@ -107,29 +94,41 @@ def process_pdf():
 
         embeddings = OpenAIEmbeddings()
         db = FAISS.from_texts(texts, embeddings)
+        db.save_local(f"embeddings/{user_id}")
         pdf_processing_complete = True
 
-        return jsonify({'message': 'Document processed successfully'})
+        return jsonify({'message': 'Document processed successfully', 'user_id': user_id})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
 @app.route('/ask_question', methods=['POST'])
 def ask_question():
-    global language, pdf_path, pdf_document, chat_buffer, embeddings, db, llm_chain, pdf_processing_complete
+    global language, embeddings, db, llm_chain, pdf_processing_complete
 
     if not pdf_processing_complete:
         return jsonify({'error': 'Document processing is not complete. Please process the Document first.'}), 400
 
     user_question = request.form.get('question', '')
+    user_id = request.form.get('user_id', '')
+
+    stored_user_id = session.get('user_id', '')
+    if user_id != stored_user_id:
+        return jsonify({'error': 'Invalid user ID.'}), 400
+
+    # Set a default language in case it is not provided in the request
+    language = session.get('language', 'English')
+
+    db = session.get('db')
 
     if not user_question:
         return jsonify({'error': 'Please provide a question in the "question" form field.'}), 400
 
-    query = f"give answer of the given question in {language} language. question : {user_question}?"
-    docs = db.similarity_search(query, k=3)
+    query = user_question
+    new_db = FAISS.load_local(f"embeddings/{user_id}", embeddings)
+    docs = new_db.similarity_search(query, k=3)
     response = llm_chain.predict(context=docs, query=query)
-
-    return jsonify({'response': response})
+    translated = GoogleTranslator(source='auto', target=language).translate(response)
+    return jsonify({'response': translated})
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=True,threaded=True)
