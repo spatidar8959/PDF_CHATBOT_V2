@@ -14,7 +14,6 @@ from dotenv import load_dotenv
 from threading import Lock
 
 
-
 load_dotenv()
 lock = Lock()
 app = Flask(__name__)
@@ -34,7 +33,8 @@ user_id = None
 
 template = """
 You are helpful AI question answering Assistant.You read the context provide by user and generate answer of the user query.
-If user ask question out of context tell the user "This is not given in the context" or give answer in your term.
+If user ask question out of context tell the user "This is not given in the context" or give answer in your term.And dont disclose 
+internal information.explain every user query or question in brief details.
 
 # Context: {context}
 # Question: {query}
@@ -50,7 +50,7 @@ language_model = OpenAI()
 llm_chain = LLMChain(
     llm=language_model,
     prompt=prompt_template,
-    verbose=True,
+    verbose=False,
 )
 
 ALLOWED_EXTENSIONS = {'pdf','txt'}
@@ -109,14 +109,14 @@ def ask_question():
 
         user_question = request.form.get('question', '')
         user_id = request.form.get('user_id', '')
-        language = request.form.get('language', '')
+        language = request.form.get('language', '').lower()
         
         if language == "":
             language = 'english'
 
-        stored_user_id = session.get('user_id', '')
-        if user_id != stored_user_id:
-            return jsonify({'error': 'Invalid user ID.'}), 400
+        # stored_user_id = session.get('user_id', '')
+        # if user_id != stored_user_id:
+        #     return jsonify({'error': 'Invalid user ID.'}), 400
         
         db = session.get('db')
 
